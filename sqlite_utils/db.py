@@ -3305,6 +3305,13 @@ class Table(Queryable):
         if hash_id_columns and hash_id is None:
             hash_id = "id"
 
+        real_columns = self.columns
+        if real_columns:  # the table exists
+            if not pk and not hash_id:
+                pk = tuple(column.name for column in real_columns if column.is_pk)
+            if not not_null:
+                not_null = [column.name for column in real_columns if column.notnull]
+
         if upsert and (not pk and not hash_id):
             raise PrimaryKeyRequired("upsert() requires a pk")
         assert not (hash_id and pk), "Use either pk= or hash_id="

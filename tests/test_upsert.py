@@ -42,8 +42,18 @@ def test_upsert_error_if_no_pk(fresh_db):
     table = fresh_db["table"]
     with pytest.raises(PrimaryKeyRequired):
         table.upsert_all([{"id": 1, "name": "Cleo"}])
-    with pytest.raises(PrimaryKeyRequired):
-        table.upsert({"id": 1, "name": "Cleo"})
+    table.upsert_all([{"id": 1, "name": "Cleo"}], pk='id')
+    # but the second time, if the table exists, this is no longer necessary
+    table.upsert({"id": 2, "name": "Peter"})
+
+
+def test_upsert_succeeds_even_if_existing_col_is_notnull(fresh_db):
+    table = fresh_db["table"]
+    # create the table with an initial insert
+    table.insert({"id": 1, "name": "Cleo"}, pk="id", not_null=["name"])
+    # upsert with a column not part of the primary key but which is not allowed to be null
+    table.upsert({'id': 2, 'name': 'Peter'})
+    assert list(table.rows) == [{"id": 1, "name": "Cleo"}, {"id": 2, "name": "Peter"}]
 
 
 def test_upsert_with_hash_id(fresh_db):

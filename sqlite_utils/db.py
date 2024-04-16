@@ -28,6 +28,7 @@ from typing import (
     cast,
     Any,
     Callable,
+    Collection,
     Dict,
     Generator,
     Iterable,
@@ -2424,6 +2425,38 @@ class Table(Queryable):
         }
         return trigger_names.issubset(self.triggers_dict.keys())
 
+    def fts_triggers_sql(self, columns: Collection[str]) -> str:
+        table_name = self.name
+        old_cols = ", ".join("old.[{}]".format(c) for c in columns)
+        new_cols = ", ".join("new.[{}]".format(c) for c in columns)
+        trigger = "TEMP TRIGGER" if self.schema_name else "TRIGGER"
+        fulltbl = self._fullname
+        return (
+            textwrap.dedent(
+                """
+            CREATE {trigger} [{table}_ai] AFTER INSERT ON {fulltbl} BEGIN
+              INSERT INTO [{table}_fts] (rowid, {columns}) VALUES (new.rowid, {new_cols});
+            END;
+            CREATE {trigger} [{table}_ad] AFTER DELETE ON {fulltbl} BEGIN
+              INSERT INTO [{table}_fts] ([{table}_fts], rowid, {columns}) VALUES('delete', old.rowid, {old_cols});
+            END;
+            CREATE {trigger} [{table}_au] AFTER UPDATE ON {fulltbl} BEGIN
+              INSERT INTO [{table}_fts] ([{table}_fts], rowid, {columns}) VALUES('delete', old.rowid, {old_cols});
+              INSERT INTO [{table}_fts] (rowid, {columns}) VALUES (new.rowid, {new_cols});
+            END;
+        """
+            )
+            .strip()
+            .format(
+                table=table_name,
+                trigger=trigger,
+                fulltbl=fulltbl,
+                columns=", ".join("[{}]".format(c) for c in columns),
+                old_cols=old_cols,
+                new_cols=new_cols,
+            )
+        )
+
     def enable_fts(
         self,
         columns: Iterable[str],
@@ -2488,32 +2521,7 @@ class Table(Queryable):
         self.populate_fts(columns)
 
         if create_triggers:
-            old_cols = ", ".join("old.[{}]".format(c) for c in columns)
-            new_cols = ", ".join("new.[{}]".format(c) for c in columns)
-            triggers = (
-                textwrap.dedent(
-                    """
-                CREATE TRIGGER [{table}_ai] AFTER INSERT ON [{table}] BEGIN
-                  INSERT INTO [{table}_fts] (rowid, {columns}) VALUES (new.rowid, {new_cols});
-                END;
-                CREATE TRIGGER [{table}_ad] AFTER DELETE ON [{table}] BEGIN
-                  INSERT INTO [{table}_fts] ([{table}_fts], rowid, {columns}) VALUES('delete', old.rowid, {old_cols});
-                END;
-                CREATE TRIGGER [{table}_au] AFTER UPDATE ON [{table}] BEGIN
-                  INSERT INTO [{table}_fts] ([{table}_fts], rowid, {columns}) VALUES('delete', old.rowid, {old_cols});
-                  INSERT INTO [{table}_fts] (rowid, {columns}) VALUES (new.rowid, {new_cols});
-                END;
-            """
-                )
-                .strip()
-                .format(
-                    table=table_name,
-                    columns=", ".join("[{}]".format(c) for c in columns),
-                    old_cols=old_cols,
-                    new_cols=new_cols,
-                )
-            )
-            self.db.executescript(triggers)
+            self.db.executescript(self.fts_triggers_sql(columns))
         return self
 
     def populate_fts(self, columns: Iterable[str]) -> "Table":

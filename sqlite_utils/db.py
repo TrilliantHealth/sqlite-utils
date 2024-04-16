@@ -3308,9 +3308,13 @@ class Table(Queryable):
         real_columns = self.columns
         if real_columns:  # the table exists
             if not pk and not hash_id:
-                pk = tuple(column.name for column in real_columns if column.is_pk)
+                pk = [column.name for column in real_columns if column.is_pk]
             if not not_null:
-                not_null = [column.name for column in real_columns if column.notnull]
+                not_null = [
+                    column.name
+                    for column in real_columns
+                    if column.notnull and not column.is_pk
+                ]
 
         if upsert and (not pk and not hash_id):
             raise PrimaryKeyRequired("upsert() requires a pk")
